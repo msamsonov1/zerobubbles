@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZeroBubble: Orbital LH2 Acoustic Bubble Purge Auditor</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            deepBg: '#03050a',
+            panelBg: 'rgba(11, 17, 30, 0.75)',
+            borderGlow: 'rgba(6, 182, 212, 0.25)',
+            cyanGlow: '#06b6d4',
+            violetGlow: '#8b5cf6',
+            emeraldGlow: '#10b981',
+            roseGlow: '#f43f5e',
+            amberGlow: '#f59e0b',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Bulletproof MathJax v3 Configuration (Head-first) -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <style>
+    body {
+      background-color: #03050a;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .formula-box {
+      background: #020408;
+      border: 1px solid #1e293b;
+      box-shadow: inset 0 0 16px rgba(0,0,0,0.8);
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #080c14; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+    /* Acoustic Glow Canvas styles */
+    .canvas-container {
+      position: relative;
+      background: radial-gradient(circle at 50% 50%, #081122 0%, #03050a 100%);
+    }
+    .hud-grid {
+      background-size: 24px 24px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+    @media print {
+      body { background: white !important; color: black !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-cyan-500 selection:text-black">
+
+  <!-- Top Navigation & Global Header -->
+  <header class="border-b border-gray-800 bg-[#080c14]/90 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <!-- Brand & Logo -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-violet-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 border border-cyan-400/30">
+            <i data-lucide="waves" class="w-6 h-6 text-white"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                ZeroBubble <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 mono font-normal">v3.4 NASA-CFM</span>
+              </span>
+            </div>
+            <p class="text-[11px] text-gray-400">Orbital Liquid Hydrogen Acoustic Bubble Purge Auditor & Real-time State Inversion</p>
+          </div>
+        </div>
+
+        <!-- 4-Tab Navigation Buttons -->
+        <nav class="flex items-center space-x-1 sm:space-x-2">
+          <button id="tabBtnSim" onclick="switchTab('sim')" class="px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/10">
+            <i data-lucide="gauge" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Telemetry & Simulation HUD</span>
+            <span class="sm:hidden">Telemetry</span>
+          </button>
+          <button id="tabBtnPhysics" onclick="switchTab('physics')" class="px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/40">
+            <i data-lucide="atom" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Physics & Inversion Engine</span>
+            <span class="sm:hidden">Physics</span>
+          </button>
+          <button id="tabBtnProposal" onclick="switchTab('proposal')" class="px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/40">
+            <i data-lucide="file-badge-2" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">NASA SBIR/STTR Proposal ($225k)</span>
+            <span class="sm:hidden">SBIR</span>
+          </button>
+          <button id="tabBtnARR" onclick="switchTab('arr')" class="px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/40">
+            <i data-lucide="trending-up" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Commercial ARR ($214M+)</span>
+            <span class="sm:hidden">ARR</span>
+          </button>
+        </nav>
+
+        <!-- System Quick Status Indicator -->
+        <div class="hidden lg:flex items-center space-x-3 text-xs border-l border-gray-800 pl-4">
+          <div class="flex items-center space-x-1.5">
+            <span id="globalAuditorDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="globalAuditorStatus" class="mono text-gray-300 font-medium">ACOUSTIC TRAP: LOCKED</span>
+          </div>
+          <span class="text-gray-600">|</span>
+          <span class="mono text-cyan-400 text-[11px]"><span id="liveFreqTop">18.42</span> kHz PZT DRIVE</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Viewport Router Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-grow">
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: LIVE SIMULATION & TELEMETRY HUD (#viewSim)                          -->
+    <!-- ========================================================================= -->
+    <div id="viewSim" class="space-y-6">
+
+      <!-- Realtime Alert Banner -->
+      <div id="cavitationAlertBanner" class="hidden bg-rose-950/80 border border-rose-500/50 rounded-xl p-3 px-4 flex items-center justify-between shadow-lg shadow-rose-950/40 transition-all">
+        <div class="flex items-center space-x-3">
+          <div class="p-2 bg-rose-500/20 rounded-lg text-rose-400 animate-bounce">
+            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="font-bold text-rose-200 text-sm flex items-center gap-2">
+              CRITICAL BUBBLE ENTRAINMENT DETECTED AT TURBOPUMP INLET
+              <span class="px-2 py-0.5 rounded bg-rose-900 text-rose-300 text-xs mono">NPSH MARGIN &lt; 0.12 Bar</span>
+            </div>
+            <p class="text-xs text-rose-300/80">Acoustic resonance wavelength shift $\Delta \lambda = +3.42\text{ mm}$ detected in $LH_2$ feed line. Immediate acoustic radiation force purge initiated.</p>
+          </div>
+        </div>
+        <button onclick="triggerPurge()" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-semibold mono uppercase tracking-wider transition">
+          EXECUTE TRANSDUCER SWEEP
+        </button>
+      </div>
+
+      <!-- Top Primary Workspace: Pipe Fluid Dynamic Visualizer Canvas -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left 8 Cols: Microgravity Propellant Duct Visualizer Canvas -->
+        <div class="lg:col-span-8 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between backdrop-blur shadow-2xl relative overflow-hidden">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-800/80 z-10">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="activity" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">
+                Cryogenic $LH_2$ Feed Duct Acoustic Standing Wave Field & Bubble Trapping (CFM-04)
+              </h2>
+            </div>
+            <div class="flex items-center space-x-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-blue-950/80 text-blue-400 border border-blue-800 mono">PZT Array 1-4</span>
+              <span id="purgeStatusBadge" class="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 mono">FIELD STABLE</span>
+            </div>
+          </div>
+
+          <!-- The Interactive HTML5 Canvas -->
+          <div class="relative w-full h-72 sm:h-80 my-3 rounded-xl overflow-hidden canvas-container border border-gray-800/60 hud-grid">
+            <canvas id="propellantCanvas" class="w-full h-full block"></canvas>
+            
+            <!-- Canvas Inset Indicators -->
+            <div class="absolute bottom-2 left-3 bg-gray-950/80 border border-gray-800/80 px-2.5 py-1 rounded-md text-[11px] mono text-gray-400 flex items-center space-x-3 backdrop-blur">
+              <span>LH2 Temp: <strong class="text-cyan-400">20.28 K</strong></span>
+              <span>Density $\rho$: <strong class="text-cyan-400">70.85 kg/m³</strong></span>
+              <span>Bulk Modulus $K$: <strong class="text-cyan-400">1.82×10⁸ Pa</strong></span>
+            </div>
+
+            <div class="absolute top-2 right-3 bg-gray-950/80 border border-gray-800/80 px-2.5 py-1 rounded-md text-[11px] mono text-gray-400 flex items-center space-x-2 backdrop-blur">
+              <span class="w-2 h-2 rounded-full bg-violet-400"></span>
+              <span>Acoustic Node (Pressure Minima / Gor'kov Trap)</span>
+            </div>
+
+            <!-- Inflow / Outflow Markers -->
+            <div class="absolute top-1/2 -translate-y-1/2 left-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest pointer-events-none rotate-90">
+              ◄ LH2 FLOW (0.35 m/s)
+            </div>
+            <div class="absolute top-1/2 -translate-y-1/2 right-2 text-[10px] font-bold text-rose-500 uppercase tracking-widest pointer-events-none -rotate-90">
+              TURBOPUMP INLET ►
+            </div>
+          </div>
+
+          <!-- Canvas Micro-Controller Toolbar -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
+            <div class="bg-gray-950/70 p-2.5 rounded-lg border border-gray-800/80">
+              <span class="text-gray-400 text-[10px] uppercase block">Resonance $\lambda_0$</span>
+              <span id="valLambda" class="text-cyan-300 font-bold mono text-sm">54.29 mm</span>
+              <span class="text-[10px] text-gray-500 block">Single-Phase LH2</span>
+            </div>
+            <div class="bg-gray-950/70 p-2.5 rounded-lg border border-gray-800/80">
+              <span class="text-gray-400 text-[10px] uppercase block">Measured $\lambda_{\text{shift}}$</span>
+              <span id="valLambdaShift" class="text-violet-300 font-bold mono text-sm">54.31 mm</span>
+              <span id="valShiftDelta" class="text-[10px] text-emerald-400 block">+0.02 mm (Nominal)</span>
+            </div>
+            <div class="bg-gray-950/70 p-2.5 rounded-lg border border-gray-800/80">
+              <span class="text-gray-400 text-[10px] uppercase block">Feed Duct Line $P$</span>
+              <span id="valPressure" class="text-cyan-300 font-bold mono text-sm">2.42 bar</span>
+              <span class="text-[10px] text-gray-500 block">Baseline $\pm 0.1$ bar</span>
+            </div>
+            <div class="bg-gray-950/70 p-2.5 rounded-lg border border-gray-800/80">
+              <span class="text-gray-400 text-[10px] uppercase block">Entrained Void Fraction $\alpha$</span>
+              <span id="valVoidFraction" class="text-emerald-400 font-bold mono text-sm">0.008%</span>
+              <span id="valCavRisk" class="text-[10px] text-emerald-400 block">Cavitation Risk: ZERO</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right 4 Cols: Diagnostic Phase-Space Chart (Lambda vs Pressure) -->
+        <div class="lg:col-span-4 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between backdrop-blur shadow-2xl">
+          <div class="flex items-center justify-between pb-2 border-b border-gray-800/80">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="crosshair" class="w-4 h-4 text-violet-400"></i>
+              <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">
+                $(\lambda, P)$ Phase-Space Inversion
+              </h2>
+            </div>
+            <span class="text-[10px] mono text-gray-400">Live Orbit State</span>
+          </div>
+
+          <!-- Phase-Space Chart Canvas -->
+          <div class="relative w-full h-64 sm:h-72 my-2">
+            <canvas id="phaseSpaceChart"></canvas>
+          </div>
+
+          <p class="text-[11px] text-gray-400 leading-relaxed border-t border-gray-800/80 pt-2">
+            Points falling outside the cyan baseline band represent micro-bubble acoustic dispersion: $\Delta \lambda \propto \alpha \cdot \frac{c_0^2}{\omega^2 - \omega_0^2}$. Software audits state divergence before bubbles contact the impeller.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Closed-Loop Telemetry & Operator Control Station -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+
+        <!-- Controls: Sliders, Fault Injection & Purge Mode (5 Cols) -->
+        <div class="md:col-span-5 bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between space-y-4">
+          <div>
+            <h3 class="text-sm font-semibold text-white uppercase tracking-wider flex items-center gap-2 mb-3">
+              <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+              Cryo-Fluid Dynamic Inputs & Fault Injection
+            </h3>
+            
+            <!-- Pressure Slider -->
+            <div class="space-y-1.5 mb-3">
+              <div class="flex justify-between text-xs">
+                <span class="text-gray-300">Duct Fluid Pressure ($P$)</span>
+                <span id="sliderPVal" class="text-cyan-400 mono font-semibold">2.40 bar</span>
+              </div>
+              <input type="range" id="inputPressure" min="1.0" max="4.0" step="0.05" value="2.40" 
+                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                oninput="onPressureSliderChange(this.value)">
+              <div class="flex justify-between text-[10px] text-gray-500 mono">
+                <span>1.0 bar (Near NPSH limit)</span>
+                <span>4.0 bar (Subcooled)</span>
+              </div>
+            </div>
+
+            <!-- Flow Rate Slider -->
+            <div class="space-y-1.5 mb-3">
+              <div class="flex justify-between text-xs">
+                <span class="text-gray-300">Propellant Transfer Velocity ($v$)</span>
+                <span id="sliderVVal" class="text-cyan-400 mono font-semibold">0.35 m/s</span>
+              </div>
+              <input type="range" id="inputVelocity" min="0.1" max="1.2" step="0.05" value="0.35" 
+                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                oninput="onVelocitySliderChange(this.value)">
+              <div class="flex justify-between text-[10px] text-gray-500 mono">
+                <span>0.10 m/s (Low mass)</span>
+                <span>1.20 m/s (Chilled chilldown)</span>
+              </div>
+            </div>
+
+            <!-- Microgravity Boiling / Boil-Off Rate Slider -->
+            <div class="space-y-1.5 mb-4">
+              <div class="flex justify-between text-xs">
+                <span class="text-gray-300">Heat Leak Boil-Off Flux ($\dot{q}_{\text{leak}}$)</span>
+                <span id="sliderQVal" class="text-cyan-400 mono font-semibold">12.5 W/m²</span>
+              </div>
+              <input type="range" id="inputHeatLeak" min="0" max="60" step="1" value="12" 
+                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                oninput="onHeatLeakSliderChange(this.value)">
+            </div>
+          </div>
+
+          <!-- Action Buttons: Manual Injections & Reset -->
+          <div class="space-y-2 pt-2 border-t border-gray-800">
+            <div class="flex space-x-2">
+              <button onclick="injectBubbleCluster()" class="flex-1 py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold mono flex items-center justify-center space-x-2 transition">
+                <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                <span>Inject Bubble Cluster</span>
+              </button>
+              <button onclick="triggerPurge()" class="flex-1 py-2.5 px-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-semibold mono flex items-center justify-center space-x-2 transition">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                <span>Sweep PZT Purge</span>
+              </button>
+            </div>
+            <div class="flex space-x-2">
+              <button id="autoPilotBtn" onclick="toggleAutoPilot()" class="flex-1 py-2 px-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold mono flex items-center justify-center space-x-1.5 transition">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>Autonomous Auditor: ON</span>
+              </button>
+              <button onclick="resetSimulation()" class="py-2 px-3 bg-gray-800/60 hover:bg-gray-800 text-gray-300 rounded-xl text-xs font-mono transition">
+                Reset
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Telemetry Time-Series Charts (7 Cols) -->
+        <div class="md:col-span-7 bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-gray-800/80">
+            <h3 class="text-sm font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+              <i data-lucide="line-chart" class="w-4 h-4 text-cyan-400"></i>
+              Real-Time Acoustic Impedance & Impeller Cavitation Margin (NPSH)
+            </h3>
+            <span class="text-[11px] mono text-gray-400">10 Hz Telemetry Window</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 h-64">
+            <!-- Subchart 1: Lambda Drift vs Nominal -->
+            <div class="relative flex flex-col justify-between bg-gray-950/60 p-2.5 rounded-xl border border-gray-800/80">
+              <span class="text-[11px] font-semibold text-gray-300 flex items-center justify-between">
+                <span>Resonance Wavelength $\lambda(t)$</span>
+                <span class="text-[10px] text-cyan-400 mono">Target: 54.29 mm</span>
+              </span>
+              <div class="w-full h-44">
+                <canvas id="timeSeriesLambdaChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Subchart 2: NPSH Margin & Cavitation Risk Threshold -->
+            <div class="relative flex flex-col justify-between bg-gray-950/60 p-2.5 rounded-xl border border-gray-800/80">
+              <span class="text-[11px] font-semibold text-gray-300 flex items-center justify-between">
+                <span>Turbopump NPSH Margin $\Delta H$</span>
+                <span class="text-[10px] text-emerald-400 mono">&gt; 0.35 Bar Margin</span>
+              </span>
+              <div class="w-full h-44">
+                <canvas id="timeSeriesNpshChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-800/80">
+            <span>Acoustic Radiation Force ($F_{\text{rad}}$): <strong class="text-cyan-300 mono" id="liveRadForce">142.6 µN</strong></span>
+            <span>Piezoelectric Phase Sweep: <strong class="text-violet-300 mono" id="liveSweepPhase">0° → 180° Traveling</strong></span>
+            <span>Purge Valve Bypass: <strong class="text-emerald-300 mono" id="liveBypassDuty">0.0% Closed</strong></span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: CORE PHYSICS & MATHEMATICAL MODEL (#viewPhysics)                    -->
+    <!-- ========================================================================= -->
+    <div id="viewPhysics" class="hidden space-y-6">
+      
+      <!-- Section Header -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6 backdrop-blur">
+        <div class="flex items-center space-x-3 mb-2">
+          <div class="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+            <i data-lucide="atom" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Cryogenic Multiphase Acoustic Radiation Physics & State Inversion</h2>
+            <p class="text-sm text-gray-400">Mathematical formulation of acoustic dispersion, Gor'kov radiation force potentials, and real-time void-fraction estimation in orbital liquid hydrogen.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Core Physics Formula Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Card 1: Gor'kov Acoustic Radiation Force Potential -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider mono">Governing Equation 1</span>
+              <span class="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 text-[10px] border border-cyan-800">Radiation Force Field</span>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-2">Gor'kov Acoustic Radiation Potential on Hydrogen Bubbles</h3>
+            <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+              In microgravity, buoyancy forces vanish ($g \to 0$). Entrained vapor bubbles ($H_2 \text{ gas}$) are manipulated solely through the gradient of the Gor'kov acoustic potential $U$, directing bubbles toward pressure antinodes or nodes depending on the acoustic contrast factor $f_1, f_2$:
+            </p>
+            
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-cyan-300 text-sm overflow-x-auto my-3">
+              $$U = 2\pi R_b^3 \rho_f \left[ \frac{\langle p^2 \rangle}{3 \rho_f^2 c_f^2} f_1 - \frac{\langle v^2 \rangle}{2} f_2 \right]$$
+            </div>
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-cyan-300 text-sm overflow-x-auto my-3">
+              $$\mathbf{F}_{\text{rad}} = -\nabla U, \quad f_1 = 1 - \frac{\rho_f c_f^2}{\rho_b c_b^2}, \quad f_2 = \frac{2(\rho_b - \rho_f)}{2\rho_b + \rho_f}$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed mt-2">
+              Because liquid hydrogen density $\rho_f \approx 70.85\text{ kg/m}^3$ exceeds hydrogen vapor density $\rho_b \approx 1.34\text{ kg/m}^3$ by over fifty-fold, $f_1 \ll -1$, driving micro-bubbles with massive primary acoustic radiation force $\mathbf{F}_{\text{rad}}$ directly toward the acoustic pressure nodes.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800 text-[11px] text-gray-500 mono flex justify-between">
+            <span>Primary Force: $\sim 10^{-4}\text{ N per bubble}$</span>
+            <span>$LH_2$ Speed of Sound $c_f \approx 1100\text{ m/s}$</span>
+          </div>
+        </div>
+
+        <!-- Card 2: Acoustic Resonance Wavelength Dispersion -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-violet-400 uppercase tracking-wider mono">Governing Equation 2</span>
+              <span class="px-2 py-0.5 rounded bg-violet-950 text-violet-300 text-[10px] border border-violet-800">State Inversion</span>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-2">Effective Medium Acoustic Velocity & Wavelength Shift</h3>
+            <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+              When vapor voids populate the duct, Wood’s effective medium relation and Foldy’s acoustic dispersion law alter the bulk compressibility $K_{\text{eff}}$, causing an instantaneous measurable shift in the acoustic standing wave wavelength $\lambda$ for a constant drive frequency $\omega$:
+            </p>
+
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-violet-300 text-sm overflow-x-auto my-3">
+              $$\frac{1}{c_{\text{eff}}^2} = \left( \alpha \rho_b + (1-\alpha)\rho_f \right) \left[ \frac{\alpha}{\rho_b c_b^2} + \frac{1-\alpha}{\rho_f c_f^2} \right]$$
+            </div>
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-violet-300 text-sm overflow-x-auto my-3">
+              $$\lambda(P, \alpha) = \frac{2\pi c_{\text{eff}}(P, \alpha)}{\omega} = \lambda_0(P) \cdot \left[ 1 - \frac{4\pi c_0^2 n_b R_b}{\omega_0^2 - \omega^2 + 2i\delta \omega} \right]^{-1/2}$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed mt-2">
+              By continuously measuring standing-wave wavelength $\lambda$ and duct static pressure $P$, the real-time software computes the deviation $\Delta \lambda = \lambda_{\text{meas}} - \lambda_{\text{pure}}(P)$. Any divergence detects void fractions down to $\alpha = 0.001\%$ long before bulk thermal sensors react.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800 text-[11px] text-gray-500 mono flex justify-between">
+            <span>Void Sensitivity: $\Delta \alpha \approx 10^{-5}$</span>
+            <span>Sampling Bandwidth: $2.5\text{ kHz}$</span>
+          </div>
+        </div>
+
+        <!-- Card 3: Turbopump Cavitation Dynamics & Rayleigh-Plesset -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-rose-400 uppercase tracking-wider mono">Governing Equation 3</span>
+              <span class="px-2 py-0.5 rounded bg-rose-950 text-rose-300 text-[10px] border border-rose-800">Impeller Destruction</span>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-2">Rayleigh-Plesset Vapor Collapse & Net Positive Suction Head</h3>
+            <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+              If an entrained bubble enters the turbopump inducer, the local pressure drop plunges below saturation pressure $P_{\text{sat}}(T)$. As the bubble enters the high-pressure impeller stage, violent asymmetric Rayleigh-Plesset collapse generates microjets ($v_{\text{jet}} > 1000\text{ m/s}$), eroding titanium-aluminide blades within seconds:
+            </p>
+
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-rose-300 text-sm overflow-x-auto my-3">
+              $$R \ddot{R} + \frac{3}{2}\dot{R}^2 = \frac{1}{\rho_f} \left[ P_{\text{bubble}}(R) - P_{\text{duct}}(t) - \frac{2\sigma}{R} - \frac{4\mu_f \dot{R}}{R} \right]$$
+            </div>
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-rose-300 text-sm overflow-x-auto my-3">
+              $$\text{NPSH}_{\text{margin}} = \frac{P_{\text{inlet}} - P_{\text{sat}}(T_{LH_2})}{\rho_f g_0} - \frac{v_{\text{inlet}}^2}{2 g_0} \ge \Delta H_{\text{crit}}$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed mt-2">
+              ZeroBubble maintains $\text{NPSH}_{\text{margin}} > 0.35\text{ bar}$ equivalent by preventing thermodynamic vapor expansion and micro-bubble seeding before fluid crosses the inducer inlet plane.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800 text-[11px] text-gray-500 mono flex justify-between">
+            <span>Shockwave Pressure: $P_{\text{collapse}} > 1.2\text{ GPa}$</span>
+            <span>Blade Erosion Rate: $-0.4\text{ mm/sec}$</span>
+          </div>
+        </div>
+
+        <!-- Card 4: Transducer Phase-Steered Traveling Acoustic Wave Purge -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider mono">Governing Equation 4</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] border border-emerald-800">Closed-Loop Actuation</span>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-2">Multiphase PZT Phase Modulation & Acoustic Bubble Sweeping</h3>
+            <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+              Upon detecting anomalous $(\lambda, P)$ divergence, the controller shifts the drive signals across the piezoelectric transducer array from a stationary standing wave into an asymmetric traveling wave with spatial phase velocity $v_{\text{phase}} = \Delta \phi / (\Delta x \cdot \omega)$:
+            </p>
+
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-emerald-300 text-sm overflow-x-auto my-3">
+              $$p(x,t) = \sum_{k=1}^{4} A_k \sin\left(\frac{2\pi}{\lambda_k} x - \omega t + \phi_k(t)\right), \quad \phi_k(t) = \phi_0 + k \cdot \Omega_{\text{sweep}} t$$
+            </div>
+            <div class="formula-box p-3 rounded-xl border border-gray-800 text-center text-emerald-300 text-sm overflow-x-auto my-3">
+              $$\langle \mathbf{F}_{\text{net-drift}} \rangle = \frac{4\pi R_b^3}{3} \nabla \langle E_{\text{kinetic}} - E_{\text{potential}} \rangle + \frac{2\pi}{\lambda} \cdot \Pi_{\text{acoustic}}$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed mt-2">
+              This continuously accelerates acoustic nodes radially inward or axially toward secondary gas vent recirculation ducts, purging 100% of bubbles away from the engine turbopump manifold without mechanical moving parts.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800 text-[11px] text-gray-500 mono flex justify-between">
+            <span>Sweep Velocity: $0.15\text{ to } 0.85\text{ m/s}$</span>
+            <span>PZT Power Budget: $< 45\text{ W}$</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: NASA SBIR/STTR PROPOSAL & HARDWARE TRANSITION (#viewProposal)       -->
+    <!-- ========================================================================= -->
+    <div id="viewProposal" class="hidden space-y-6">
+
+      <!-- Executive Header -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6 backdrop-blur flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center space-x-2 text-xs mono text-cyan-400 font-semibold mb-1">
+            <span>NASA SBIR 2026 PHASE I</span>
+            <span>•</span>
+            <span>TOPIC: Z1.03-CFM</span>
+            <span>•</span>
+            <span>MICROGRAVITY PROPELLANT AUDITING</span>
+          </div>
+          <h2 class="text-2xl font-bold text-white tracking-tight">ZeroBubble Phase I STTR Technical Proposal</h2>
+          <p class="text-sm text-gray-400 mt-1">Autonomous Acoustic Inversion Software & Piezo-Array for Microgravity Cryogenic Transfer Line Bubble Purging.</p>
+        </div>
+        <div class="flex flex-col items-start md:items-end bg-gray-950/80 p-3 rounded-xl border border-gray-800">
+          <span class="text-xs text-gray-400">Total Phase I Allocation</span>
+          <span class="text-xl font-bold text-emerald-400 mono">$225,000.00</span>
+          <span class="text-[11px] text-gray-500">6 Months Period of Performance</span>
+        </div>
+      </div>
+
+      <!-- Budget & University Partner Breakdown (Strict 30% STTR Requirement) -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center space-x-2 text-xs font-semibold text-cyan-400 mb-2 mono">
+            <i data-lucide="building-2" class="w-4 h-4"></i>
+            <span>Small Business Lead (70.0%)</span>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">RFWaveCode Aerospace LLC</h3>
+          <p class="text-xl font-bold text-cyan-300 mono mb-3">$157,500</p>
+          <ul class="text-xs text-gray-400 space-y-1.5 leading-relaxed">
+            <li>• Architecture of live $(\lambda, P)$ acoustic state observer algorithm</li>
+            <li>• Embedded firmware for 4-channel FPGA PZT driver array ($20\text{–}60\text{ kHz}$)</li>
+            <li>• Integration of closed-loop cavitation prevention protocol</li>
+            <li>• Project management, flight qualification pathway, TRL 3 $\to$ 5</li>
+          </ul>
+        </div>
+
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center space-x-2 text-xs font-semibold text-violet-400 mb-2 mono">
+            <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+            <span>STTR Partner (30.0% Subcontract)</span>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">Univ. of Central Florida (UCF)</h3>
+          <p class="text-xl font-bold text-violet-300 mono mb-3">$67,500</p>
+          <ul class="text-xs text-gray-400 space-y-1.5 leading-relaxed">
+            <li>• Lead: Center for Advanced Turbomachinery & Energy Research (CATER)</li>
+            <li>• Cryogenic liquid nitrogen ($LN_2$) and liquid hydrogen ($LH_2$) vacuum duct rig</li>
+            <li>• High-speed micro-shadowgraphy bubble visualization ($100,000\text{ fps}$)</li>
+            <li>• Empirical calibration of ultrasonic velocity dispersion curves</li>
+          </ul>
+        </div>
+
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center space-x-2 text-xs font-semibold text-emerald-400 mb-2 mono">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>Phase II Hardware Milestone</span>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">NASA CFM Vacuum Gate</h3>
+          <p class="text-xl font-bold text-emerald-300 mono mb-3">$850,000 – $1.2M</p>
+          <ul class="text-xs text-gray-400 space-y-1.5 leading-relaxed">
+            <li>• Full-scale 2-inch $LH_2$ vacuum-jacketed transfer duct prototype</li>
+            <li>• Testing at NASA Marshall (MSFC) or Glenn (GRC) Cryogenic Complex</li>
+            <li>• Direct interface into Lunar Artemis depot propellant transfer demo</li>
+            <li>• Target: 99.98% bubble rejection at 2.5 kg/sec transfer rates</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- 6-Month Work Breakdown Structure (WBS) Table -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6 backdrop-blur">
+        <h3 class="text-sm font-semibold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+          <i data-lucide="calendar" class="w-4 h-4 text-cyan-400"></i>
+          Phase I Technical Work Breakdown Structure & Milestones (Months 1–6)
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-gray-800 text-gray-400 font-mono">
+                <th class="pb-3 font-semibold">Milestone</th>
+                <th class="pb-3 font-semibold">Task Description</th>
+                <th class="pb-3 font-semibold">Lead Organization</th>
+                <th class="pb-3 font-semibold">Deliverable</th>
+                <th class="pb-3 font-semibold text-right">Window</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300 font-sans">
+              <tr>
+                <td class="py-3 font-mono text-cyan-400 font-bold">M1: CFM-KIN</td>
+                <td class="py-3">Acoustic kinetic model & Gor'kov trapping potentials for subcooled $LH_2$</td>
+                <td class="py-3">UCF CATER / RFWaveCode</td>
+                <td class="py-3 text-gray-400">Validated MATLAB / OpenFOAM CFM solver</td>
+                <td class="py-3 font-mono text-right text-gray-400">Month 1–2</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-mono text-cyan-400 font-bold">M2: OBS-INV</td>
+                <td class="py-3">Real-time state observer inversion $(\lambda, P) \to \alpha$ algorithm build</td>
+                <td class="py-3">RFWaveCode</td>
+                <td class="py-3 text-gray-400">C++ / Rust embedded micro-auditor core engine</td>
+                <td class="py-3 font-mono text-right text-gray-400">Month 2–3</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-mono text-cyan-400 font-bold">M3: EXP-LN2</td>
+                <td class="py-3">Subscale cryogenic $LN_2$ flow loop testing & micro-shadowgraphy auditing</td>
+                <td class="py-3">UCF CATER Labs</td>
+                <td class="py-3 text-gray-400">High-speed optical bubble tracking & acoustic dataset</td>
+                <td class="py-3 font-mono text-right text-gray-400">Month 4–5</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-mono text-cyan-400 font-bold">M4: CTRL-PURGE</td>
+                <td class="py-3">Closed-loop PZT traveling-wave sweep validation & cavitation shutoff</td>
+                <td class="py-3">RFWaveCode & UCF</td>
+                <td class="py-3 text-gray-400">Phase I Final Technical Report & Phase II Hardware Spec</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">Month 6</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: COMMERCIAL & NATIONWIDE ARR BREAKDOWN (#viewARR)                     -->
+    <!-- ========================================================================= -->
+    <div id="viewARR" class="hidden space-y-6">
+
+      <!-- Executive Summary & Valuation Header -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6 backdrop-blur flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <div class="flex items-center space-x-2 text-xs mono text-cyan-400 font-semibold mb-1">
+            <span>COMMERCIAL EXPANSION STRATEGY</span>
+            <span>•</span>
+            <span>CIVIL & AEROSPACE TOTAL ADDRESSABLE MARKET</span>
+          </div>
+          <h2 class="text-2xl font-bold text-white tracking-tight">Nationwide ARR Target: $214.2M Mature Run-Rate</h2>
+          <p class="text-sm text-gray-400 mt-1 max-w-2xl">
+            ZeroBubble monetizes as an embedded runtime diagnostic & acoustic auditor license per cryogenic manifold, preventing multimillion-dollar turbopump destructive failures across commercial launch systems, liquid hydrogen trucking, and semiconductor fab cryogenic supply lines.
+          </p>
+        </div>
+        <div class="bg-gray-950/80 p-4 rounded-xl border border-gray-800 flex flex-col items-start md:items-end min-w-[200px]">
+          <span class="text-xs text-gray-400">Enterprise Valuation (10x SaaS Multiple)</span>
+          <span class="text-2xl font-bold text-cyan-400 mono">$2.14 Billion</span>
+          <span class="text-[11px] text-emerald-400 font-mono mt-0.5">8x–12x Deep-Tech Software Multiplier</span>
+        </div>
+      </div>
+
+      <!-- Commercial Verticals ARR Data Table -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6 backdrop-blur">
+        <h3 class="text-sm font-semibold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+          <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i>
+          Civil & Commercial Vertical Monetization Schedule
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-gray-800 text-gray-400 font-mono">
+                <th class="pb-3 font-semibold">Civil Market Vertical</th>
+                <th class="pb-3 font-semibold">Target Application</th>
+                <th class="pb-3 font-semibold">Software License / Unit Pricing</th>
+                <th class="pb-3 font-semibold">Nationwide Asset Base</th>
+                <th class="pb-3 font-semibold text-right">Mature Annual ARR</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300 font-sans">
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Commercial Space Launch
+                </td>
+                <td class="py-3 text-gray-400">Upper-stage cryogenic $LH_2 / LCH_4$ engine feed chilldown lines</td>
+                <td class="py-3 font-mono text-cyan-300">$120,000 / launch vehicle license</td>
+                <td class="py-3 font-mono">240 orbital boosters / yr</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$28.8M</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-blue-400"></span> Orbital Depots & Artemis CFM
+                </td>
+                <td class="py-3 text-gray-400">Commercial low-Earth orbit and lunar propellant storage depots</td>
+                <td class="py-3 font-mono text-cyan-300">$350,000 / orbital depot runtime</td>
+                <td class="py-3 font-mono">32 space platforms by 2030</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$11.2M</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-violet-400"></span> Liquid Hydrogen Clean Energy
+                </td>
+                <td class="py-3 text-gray-400">Heavy-duty $LH_2$ commercial tanker trucks & airport bunkering pumps</td>
+                <td class="py-3 font-mono text-cyan-300">$8,500 / dispenser audit node / yr</td>
+                <td class="py-3 font-mono">8,600 bunkering stations</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$73.1M</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-amber-400"></span> Semiconductor EUV Lithography
+                </td>
+                <td class="py-3 text-gray-400">Cryogenic helium/nitrogen cooling circuits in high-NA EUV scanners</td>
+                <td class="py-3 font-mono text-cyan-300">$45,000 / fab lithography tool / yr</td>
+                <td class="py-3 font-mono">1,120 cleanroom systems</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$50.4M</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Quantum Computing Cryostats
+                </td>
+                <td class="py-3 text-gray-400">Sub-Kelvin dilution refrigerator continuous helium recirculation</td>
+                <td class="py-3 font-mono text-cyan-300">$15,000 / dilution unit / yr</td>
+                <td class="py-3 font-mono">2,100 quantum installations</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$31.5M</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-rose-400"></span> Commercial Cryo-Aviation
+                </td>
+                <td class="py-3 text-gray-400">Hydrogen fuel-cell & turbo-electric regional airliner fuel pumps</td>
+                <td class="py-3 font-mono text-cyan-300">$24,000 / aircraft twin-manifold / yr</td>
+                <td class="py-3 font-mono">800 prototype commercial fleet</td>
+                <td class="py-3 font-mono text-right text-emerald-400 font-bold">$19.2M</td>
+              </tr>
+              <tr class="bg-gray-950/60 font-bold text-sm">
+                <td colspan="4" class="py-3.5 px-2 text-white uppercase tracking-wider font-mono">
+                  Total Nationwide Annual Recurring Revenue (Mature Addressable Pool)
+                </td>
+                <td class="py-3.5 px-2 text-right text-cyan-300 font-mono text-base font-bold">
+                  $214.2M / Year
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Deep Dive Vertical Industry Breakdown Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+        <!-- Deep Dive 1: Commercial Space Launch -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-xs font-semibold text-cyan-400 mb-2 mono">
+              <i data-lucide="rocket" class="w-4 h-4"></i>
+              <span>Orbital Propulsion Feed</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Commercial Launch Vehicles</h4>
+            <div class="space-y-2 text-xs text-gray-400 leading-relaxed mb-4">
+              <p>
+                <strong class="text-gray-200">The Physics:</strong> Acoustic radiation forces compress vapor pockets into non-critical flow paths during zero-g engine restart chilldown.
+              </p>
+              <p>
+                <strong class="text-gray-200">Why Incumbents Missed This:</strong> Legacy rockets dump tons of costly $LH_2$ overboard via passive boil-off dump valves hoping vapor clears. ZeroBubble actively audits and clears the duct with 45 W of acoustic power, saving up to 600 kg of payload mass per launch.
+              </p>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-gray-800 flex justify-between items-center text-[11px] mono text-gray-500">
+            <span>SaaS Multiple: 11.4x</span>
+            <span class="text-cyan-400 font-bold">$28.8M ARR</span>
+          </div>
+        </div>
+
+        <!-- Deep Dive 2: Clean Energy Trucking -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-xs font-semibold text-violet-400 mb-2 mono">
+              <i data-lucide="truck" class="w-4 h-4"></i>
+              <span>Heavy Transport Clean Tech</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Liquid Hydrogen Refueling</h4>
+            <div class="space-y-2 text-xs text-gray-400 leading-relaxed mb-4">
+              <p>
+                <strong class="text-gray-200">The Physics:</strong> Ultrasonic acoustic dispersion detects flashing in cryogenic dispenser nozzles before vapor lock damages 700-bar transfer pumps.
+              </p>
+              <p>
+                <strong class="text-gray-200">Why Incumbents Missed This:</strong> Incumbent stations rely on temperature probes with 4-second thermal lag, causing pumps to run dry and cavitate. ZeroBubble audits at 2,500 Hz speed-of-sound rates, preventing pump teardowns.
+              </p>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-gray-800 flex justify-between items-center text-[11px] mono text-gray-500">
+            <span>SaaS Multiple: 9.8x</span>
+            <span class="text-violet-400 font-bold">$73.1M ARR</span>
+          </div>
+        </div>
+
+        <!-- Deep Dive 3: Semiconductor Cleanroom Lithography -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-xs font-semibold text-emerald-400 mb-2 mono">
+              <i data-lucide="cpu" class="w-4 h-4"></i>
+              <span>Sub-2nm Semiconductor Tools</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">High-NA EUV Cryogenic Mirrors</h4>
+            <div class="space-y-2 text-xs text-gray-400 leading-relaxed mb-4">
+              <p>
+                <strong class="text-gray-200">The Physics:</strong> Cryogenic cooling line bubbles produce microscopic pressure pulses that cause optical vibration and wafer lithography overlay errors.
+              </p>
+              <p>
+                <strong class="text-gray-200">Why Incumbents Missed This:</strong> Fabs treated mirror vibration as mechanical isolation failure rather than acoustic multiphase boiling resonance. ZeroBubble eliminates the acoustic disturbance at the source.
+              </p>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-gray-800 flex justify-between items-center text-[11px] mono text-gray-500">
+            <span>SaaS Multiple: 12.0x</span>
+            <span class="text-emerald-400 font-bold">$50.4M ARR</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Investor & Industry Partnership Contact Call-to-Action -->
+      <div class="bg-gradient-to-r from-cyan-950/40 via-violet-950/40 to-blue-950/40 border border-cyan-500/30 rounded-2xl p-6 backdrop-blur flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h4 class="text-lg font-bold text-white">Commercial Licensing & Strategic Partner Access</h4>
+          <p class="text-xs text-gray-400 mt-1">Direct inquiries regarding Phase II hardware co-development, embedded firmware licensing, and benchtop testing.</p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <a href="mailto:support@rfwavecode.com" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-black font-semibold rounded-xl text-xs mono uppercase tracking-wider flex items-center space-x-2 shadow-lg shadow-cyan-500/20 transition">
+            <i data-lucide="mail" class="w-4 h-4 text-black"></i>
+            <span>support@rfwavecode.com</span>
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="border-t border-gray-800 bg-[#05070d] py-4 text-xs text-gray-500 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center space-x-2">
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+        <span class="text-gray-400 font-medium">ZeroBubble™ NASA SBIR/STTR Topic Z1.03</span>
+        <span>•</span>
+        <span>Cryogenic Fluid Management (CFM)</span>
+      </div>
+      <div class="mono text-[11px] text-gray-400">
+        In Partnership with UCF CATER Labs • support@rfwavecode.com
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========================================================================= -->
+  <!-- APPLICATION ENGINE & SCRIPT LOGIC (Interactive Canvas & Chart.js)          -->
+  <!-- ========================================================================= -->
+  <script>
+    // --- View Navigation & Tab Switching System ---
+    const tabMapping = {
+      'sim': { viewId: 'viewSim', btnId: 'tabBtnSim' },
+      'physics': { viewId: 'viewPhysics', btnId: 'tabBtnPhysics' },
+      'proposal': { viewId: 'viewProposal', btnId: 'tabBtnProposal' },
+      'arr': { viewId: 'viewARR', btnId: 'tabBtnARR' }
+    };
+
+    function switchTab(targetKey) {
+      Object.keys(tabMapping).forEach(key => {
+        const item = tabMapping[key];
+        const viewEl = document.getElementById(item.viewId);
+        const btnEl = document.getElementById(item.btnId);
+
+        if (key === targetKey) {
+          viewEl.classList.remove('hidden');
+          btnEl.className = "px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/10";
+        } else {
+          viewEl.classList.add('hidden');
+          btnEl.className = "px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center space-x-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/40";
+        }
+      });
+
+      // Rerender MathJax formulas on tab reveal
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise().catch(err => console.debug(err));
+      }
+
+      // If returning to simulation tab, adjust sizes and trigger immediate redraw
+      if (targetKey === 'sim') {
+        setTimeout(() => {
+          resizeCanvas();
+          if (phaseChart) phaseChart.resize();
+          if (timeSeriesLambdaChart) timeSeriesLambdaChart.resize();
+          if (timeSeriesNpshChart) timeSeriesNpshChart.resize();
+        }, 60);
+      }
+    }
+
+    // --- Simulation & Physical State Models ---
+    const simState = {
+      pressure: 2.40,           // bar
+      velocity: 0.35,           // m/s
+      heatLeak: 12.0,           // W/m^2
+      autoPilot: true,          // Autonomous acoustic audit active
+      purgeActive: false,       // Traveling wave purge mode
+      purgeTimer: 0,
+      nominalLambda: 54.29,     // mm nominal at 2.4 bar
+      measuredLambda: 54.29,    // mm real-time observed
+      voidFraction: 0.008,      // % volumetric void fraction
+      npshMargin: 0.42,         // bar
+      bubbles: [],              // Array of dynamic bubble entities
+      pztFrequency: 18.42,      // kHz
+      pztPhase: 0,              // radians
+      travelingSweepVelocity: 0,// m/s
+      tick: 0
+    };
+
+    // Initialize random micro-bubbles in LH2 transfer duct
+    function initBubbles() {
+      simState.bubbles = [];
+      const count = 35;
+      for (let i = 0; i < count; i++) {
+        simState.bubbles.push({
+          x: Math.random() * 800,
+          y: 40 + Math.random() * 180,
+          radius: 1.5 + Math.random() * 3.5,
+          vx: simState.velocity * 30 + (Math.random() * 5),
+          vy: (Math.random() - 0.5) * 8,
+          trappedInNode: false,
+          targetNodeX: 0
+        });
+      }
+    }
+
+    // --- Interactive Canvas Renderer ---
+    const canvas = document.getElementById('propellantCanvas');
+    const ctx = canvas.getContext('2d');
+    let canvasW = 800;
+    let canvasH = 280;
+
+    function resizeCanvas() {
+      const container = canvas.parentElement;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvasW = rect.width || 800;
+      canvasH = rect.height || 280;
+      canvas.width = canvasW * dpr;
+      canvas.height = canvasH * dpr;
+      ctx.resetTransform();
+      ctx.scale(dpr, dpr);
+    }
+
+    // Update physical equations and bubble states
+    function updatePhysics() {
+      simState.tick++;
+
+      // Effective medium acoustic velocity shift calculation
+      // c_eff decreases as void fraction increases -> lambda shifts upward for fixed frequency
+      const lambdaBase = 54.29 * Math.sqrt(simState.pressure / 2.40);
+      const dispersionDrift = (simState.voidFraction * 0.48) + (simState.heatLeak * 0.008);
+      simState.nominalLambda = lambdaBase;
+      simState.measuredLambda = lambdaBase + dispersionDrift;
+
+      // Net Positive Suction Head Margin (NPSH)
+      // Drops dangerously if pressure falls or void fraction spikes
+      simState.npshMargin = Math.max(0.04, (simState.pressure - 1.05) * 0.30 - (simState.voidFraction * 0.08));
+
+      // Calculate acoustic standing wave nodal positions
+      // Wavelength in canvas pixel coordinate space
+      const pxLambda = (canvasW / 4.5);
+      const nodeInterval = pxLambda / 2;
+
+      // Purge Timer Handling
+      if (simState.purgeActive) {
+        simState.purgeTimer--;
+        simState.pztPhase += 0.18;
+        simState.travelingSweepVelocity = 140; // accelerate gas backwards away from turbopump
+
+        // Reduce void fraction as bubbles get pushed
+        simState.voidFraction = Math.max(0.004, simState.voidFraction - 0.006);
+
+        if (simState.purgeTimer <= 0) {
+          simState.purgeActive = false;
+          document.getElementById('purgeStatusBadge').className = "px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 mono";
+          document.getElementById('purgeStatusBadge').innerText = "FIELD STABLE";
+          document.getElementById('globalAuditorStatus').innerText = "ACOUSTIC TRAP: LOCKED";
+          document.getElementById('globalAuditorDot').className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+        }
+      } else {
+        // Natural gradual boil-off accretion based on heat leak
+        const boilRate = (simState.heatLeak / 60) * 0.0012;
+        simState.voidFraction = Math.min(2.8, simState.voidFraction + boilRate);
+      }
+
+      // Autonomous Auditor Observer Logic
+      const lambdaDeviation = Math.abs(simState.measuredLambda - simState.nominalLambda);
+      const cavitationBanner = document.getElementById('cavitationAlertBanner');
+
+      if (lambdaDeviation > 0.45 || simState.npshMargin < 0.15) {
+        cavitationBanner.classList.remove('hidden');
+        if (simState.autoPilot && !simState.purgeActive) {
+          triggerPurge();
+        }
+      } else {
+        cavitationBanner.classList.add('hidden');
+      }
+
+      // Update bubbles physical trajectory
+      simState.bubbles.forEach((b, idx) => {
+        if (simState.purgeActive) {
+          // Acoustic traveling wave pushes bubbles leftward (away from turbopump on right)
+          b.vx = -120;
+          b.x += b.vx * 0.03;
+        } else {
+          // Normal fluid stream moving rightward toward turbopump
+          b.vx = simState.velocity * 45;
+          
+          // Gor'kov acoustic radiation trapping force toward nearest standing wave node
+          // Find nearest node
+          const nearestNodeIndex = Math.round((b.x - 20) / nodeInterval);
+          const targetNodeX = 20 + (nearestNodeIndex * nodeInterval);
+          const dxToNode = targetNodeX - b.x;
+
+          // Acoustic radiation force pulls strongly toward the node
+          const acousticForce = dxToNode * 0.12;
+          b.x += (b.vx * 0.03) + (acousticForce * 0.4);
+
+          // Radial centering force (keep inside cryogenic pipe core)
+          const targetY = canvasH / 2;
+          b.y += (targetY - b.y) * 0.02 + ((Math.random() - 0.5) * 1.5);
+        }
+
+        // Loop bubbles if they exit pipe boundaries
+        if (b.x > canvasW + 10) {
+          b.x = -15;
+          b.y = 50 + Math.random() * (canvasH - 100);
+        } else if (b.x < -20) {
+          b.x = canvasW - 20;
+          b.y = 50 + Math.random() * (canvasH - 100);
+        }
+      });
+    }
+
+    // Render Canvas Visual Components
+    function drawSimulation() {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      const pxLambda = (canvasW / 4.5);
+      const nodeInterval = pxLambda / 2;
+
+      // 1. Draw Liquid Hydrogen Cryogenic Duct Walls
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.04)';
+      ctx.fillRect(0, 30, canvasW, canvasH - 60);
+
+      // Pipe top/bottom titanium-aluminide boundary borders
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, 30);
+      ctx.lineTo(canvasW, 30);
+      ctx.moveTo(0, canvasH - 30);
+      ctx.lineTo(canvasW, canvasH - 30);
+      ctx.stroke();
+
+      // Flange bolt visual indicators
+      for (let x = 30; x < canvasW; x += 60) {
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(x, 26, 6, 8);
+        ctx.fillRect(x, canvasH - 34, 6, 8);
+      }
+
+      // 2. Render 4 Piezoelectric Acoustic Transducers (PZT) along top & bottom
+      for (let i = 0; i < 4; i++) {
+        const pztX = 80 + i * (canvasW / 4.2);
+        
+        // PZT glow
+        const isPurging = simState.purgeActive;
+        ctx.fillStyle = isPurging ? 'rgba(244, 63, 94, 0.25)' : 'rgba(139, 92, 246, 0.2)';
+        ctx.fillRect(pztX - 35, 12, 70, 18);
+        ctx.fillRect(pztX - 35, canvasH - 30, 70, 18);
+
+        // PZT Hardware blocks
+        ctx.fillStyle = isPurging ? '#f43f5e' : '#8b5cf6';
+        ctx.fillRect(pztX - 30, 14, 60, 14);
+        ctx.fillRect(pztX - 30, canvasH - 28, 60, 14);
+
+        // PZT Label
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '9px JetBrains Mono';
+        ctx.fillText(`PZT-0${i+1}`, pztX - 18, 25);
+      }
+
+      // 3. Render Acoustic Standing Wave / Traveling Wave Density Field
+      const wavePhase = simState.purgeActive ? simState.pztPhase : 0;
+      ctx.lineWidth = 1.5;
+
+      for (let x = 0; x < canvasW; x += 4) {
+        const k = (2 * Math.PI) / pxLambda;
+        // Acoustic pressure wave distribution
+        const pressureAmpl = Math.cos(k * x - wavePhase);
+        const yCenter = canvasH / 2;
+        const waveHeight = pressureAmpl * ((canvasH - 80) / 2.6);
+
+        // Dynamic wave color gradient (cyan for nominal, rose/violet for active sweep)
+        ctx.strokeStyle = simState.purgeActive 
+          ? `rgba(244, 63, 94, ${0.15 + Math.abs(pressureAmpl) * 0.45})`
+          : `rgba(6, 182, 212, ${0.12 + Math.abs(pressureAmpl) * 0.35})`;
+
+        ctx.beginPath();
+        ctx.moveTo(x, yCenter - waveHeight);
+        ctx.lineTo(x, yCenter + waveHeight);
+        ctx.stroke();
+      }
+
+      // 4. Render Acoustic Pressure Nodes (Trapping Centers)
+      for (let x = 20; x < canvasW; x += nodeInterval) {
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, 32);
+        ctx.lineTo(x, canvasH - 32);
+        ctx.stroke();
+        ctx.setLineDash([]); // reset dash
+
+        // Node dot markers
+        ctx.fillStyle = '#a78bfa';
+        ctx.beginPath();
+        ctx.arc(x, canvasH / 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 5. Draw Dynamic Micro-Bubbles
+      simState.bubbles.forEach(b => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        
+        // Bubble gradient fill
+        const grad = ctx.createRadialGradient(b.x - 1, b.y - 1, 0.5, b.x, b.y, b.radius);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+        grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.6)');
+        grad.addColorStop(1, 'rgba(139, 92, 246, 0.3)');
+        
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 0.75;
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // 6. Turbopump Impeller Intake Manifold (Right Edge Visual)
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.fillRect(canvasW - 22, 32, 22, canvasH - 64);
+      ctx.strokeRect(canvasW - 22, 32, 22, canvasH - 64);
+
+      // Impeller spinning blade simulation lines
+      const spinAngle = simState.tick * 0.25;
+      ctx.save();
+      ctx.translate(canvasW - 11, canvasH / 2);
+      ctx.rotate(spinAngle);
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = 1.5;
+      for (let a = 0; a < 4; a++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(16, 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // --- Chart.js Data Visualizations ---
+    let phaseChart = null;
+    let timeSeriesLambdaChart = null;
+    let timeSeriesNpshChart = null;
+
+    function initCharts() {
+      // 1. Primary Phase-Space Chart: Lambda vs Pressure
+      const ctxPhase = document.getElementById('phaseSpaceChart').getContext('2d');
+      
+      // Generate nominal single-phase baseline corridor curve: lambda ~ sqrt(P)
+      const nominalCurve = [];
+      const hazardZone = [];
+      for (let p = 1.0; p <= 4.0; p += 0.15) {
+        const nomL = 54.29 * Math.sqrt(p / 2.40);
+        nominalCurve.push({ x: nomL, y: p });
+        hazardZone.push({ x: nomL + 1.25, y: p }); // Threshold of catastrophic bubble entrainment
+      }
+
+      phaseChart = new Chart(ctxPhase, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: 'Single-Phase LH2 Nominal Corridor',
+              data: nominalCurve,
+              showLine: true,
+              borderColor: '#06b6d4',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.2
+            },
+            {
+              label: 'Cavitation Hazard Threshold',
+              data: hazardZone,
+              showLine: true,
+              borderColor: '#f43f5e',
+              borderDash: [5, 5],
+              borderWidth: 1.5,
+              pointRadius: 0,
+              backgroundColor: 'rgba(244, 63, 94, 0.06)',
+              fill: true
+            },
+            {
+              label: 'Live Auditor Operating Point',
+              data: [{ x: 54.29, y: 2.40 }],
+              backgroundColor: '#a855f7',
+              borderColor: '#ffffff',
+              borderWidth: 2,
+              pointRadius: 7,
+              pointHoverRadius: 9
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 9 },
+                boxWidth: 10
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `λ: ${ctx.parsed.x.toFixed(2)} mm, P: ${ctx.parsed.y.toFixed(2)} bar`
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'Acoustic Wavelength λ (mm)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+              min: 30,
+              max: 75
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Duct Pressure P (bar)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+              min: 0.8,
+              max: 4.2
+            }
+          }
+        }
+      });
+
+      // 2. Time-Series: Resonance Wavelength
+      const ctxLambdaTS = document.getElementById('timeSeriesLambdaChart').getContext('2d');
+      timeSeriesLambdaChart = new Chart(ctxLambdaTS, {
+        type: 'line',
+        data: {
+          labels: Array(25).fill(''),
+          datasets: [
+            {
+              label: 'Nominal Baseline',
+              data: Array(25).fill(54.29),
+              borderColor: '#38bdf8',
+              borderDash: [3, 3],
+              borderWidth: 1.5,
+              pointRadius: 0
+            },
+            {
+              label: 'Measured λ',
+              data: Array(25).fill(54.29),
+              borderColor: '#c084fc',
+              backgroundColor: 'rgba(192, 132, 252, 0.1)',
+              borderWidth: 2,
+              pointRadius: 0,
+              fill: true,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 8 } },
+              min: 48,
+              max: 62
+            }
+          }
+        }
+      });
+
+      // 3. Time-Series: NPSH Margin
+      const ctxNpshTS = document.getElementById('timeSeriesNpshChart').getContext('2d');
+      timeSeriesNpshChart = new Chart(ctxNpshTS, {
+        type: 'line',
+        data: {
+          labels: Array(25).fill(''),
+          datasets: [
+            {
+              label: 'Safety Limit',
+              data: Array(25).fill(0.15),
+              borderColor: '#f43f5e',
+              borderDash: [3, 3],
+              borderWidth: 1.5,
+              pointRadius: 0
+            },
+            {
+              label: 'NPSH Margin',
+              data: Array(25).fill(0.42),
+              borderColor: '#34d399',
+              backgroundColor: 'rgba(52, 211, 153, 0.12)',
+              borderWidth: 2,
+              pointRadius: 0,
+              fill: true,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 8 } },
+              min: 0.0,
+              max: 0.8
+            }
+          }
+        }
+      });
+    }
+
+    // Refresh telemetry and charts periodically
+    function updateChartsAndDOM() {
+      // 1. Update DOM Badges & HUD indicators
+      document.getElementById('valLambda').innerText = `${simState.nominalLambda.toFixed(2)} mm`;
+      document.getElementById('valLambdaShift').innerText = `${simState.measuredLambda.toFixed(2)} mm`;
+      
+      const deltaL = simState.measuredLambda - simState.nominalLambda;
+      const shiftEl = document.getElementById('valShiftDelta');
+      shiftEl.innerText = `${deltaL >= 0 ? '+' : ''}${deltaL.toFixed(2)} mm (${deltaL > 0.4 ? 'WARNING' : 'Nominal'})`;
+      shiftEl.className = deltaL > 0.4 ? 'text-[10px] text-rose-400 font-bold block animate-pulse' : 'text-[10px] text-emerald-400 block';
+
+      document.getElementById('valPressure').innerText = `${simState.pressure.toFixed(2)} bar`;
+      document.getElementById('valVoidFraction').innerText = `${simState.voidFraction.toFixed(3)}%`;
+
+      const cavEl = document.getElementById('valCavRisk');
+      if (simState.npshMargin < 0.15) {
+        cavEl.innerText = "Cavitation Risk: CRITICAL";
+        cavEl.className = "text-[10px] text-rose-400 font-bold block";
+      } else if (simState.npshMargin < 0.25) {
+        cavEl.innerText = "Cavitation Risk: ELEVATED";
+        cavEl.className = "text-[10px] text-amber-400 block";
+      } else {
+        cavEl.innerText = "Cavitation Risk: ZERO";
+        cavEl.className = "text-[10px] text-emerald-400 block";
+      }
+
+      document.getElementById('liveRadForce').innerText = `${(120 + simState.voidFraction * 80).toFixed(1)} µN`;
+      document.getElementById('liveBypassDuty').innerText = simState.purgeActive ? "100.0% RECIRC" : "0.0% Closed";
+      document.getElementById('liveSweepPhase').innerText = simState.purgeActive 
+        ? `${((simState.pztPhase % (Math.PI*2)) * (180/Math.PI)).toFixed(0)}° Sweeping` 
+        : '0° Standing Locked';
+
+      // 2. Update Phase Chart live point
+      if (phaseChart) {
+        phaseChart.data.datasets[2].data = [{
+          x: parseFloat(simState.measuredLambda.toFixed(2)),
+          y: parseFloat(simState.pressure.toFixed(2))
+        }];
+        phaseChart.update('none');
+      }
+
+      // 3. Update Time Series Charts
+      if (timeSeriesLambdaChart && timeSeriesNpshChart) {
+        const dsL = timeSeriesLambdaChart.data.datasets[1].data;
+        dsL.shift();
+        dsL.push(simState.measuredLambda);
+        timeSeriesLambdaChart.data.datasets[0].data.shift();
+        timeSeriesLambdaChart.data.datasets[0].data.push(simState.nominalLambda);
+        timeSeriesLambdaChart.update('none');
+
+        const dsN = timeSeriesNpshChart.data.datasets[1].data;
+        dsN.shift();
+        dsN.push(simState.npshMargin);
+        timeSeriesNpshChart.update('none');
+      }
+    }
+
+    // --- Interactive Controls & Event Handlers ---
+    function onPressureSliderChange(val) {
+      simState.pressure = parseFloat(val);
+      document.getElementById('sliderPVal').innerText = `${simState.pressure.toFixed(2)} bar`;
+    }
+
+    function onVelocitySliderChange(val) {
+      simState.velocity = parseFloat(val);
+      document.getElementById('sliderVVal').innerText = `${simState.velocity.toFixed(2)} m/s`;
+    }
+
+    function onHeatLeakSliderChange(val) {
+      simState.heatLeak = parseFloat(val);
+      document.getElementById('sliderQVal').innerText = `${simState.heatLeak.toFixed(1)} W/m²`;
+    }
+
+    function injectBubbleCluster() {
+      // Artificially inject 25 micro-bubbles into flow and jump void fraction
+      simState.voidFraction += 0.85;
+      for (let i = 0; i < 25; i++) {
+        simState.bubbles.push({
+          x: 20 + Math.random() * 80,
+          y: 40 + Math.random() * (canvasH - 80),
+          radius: 2.5 + Math.random() * 4.0,
+          vx: simState.velocity * 35,
+          vy: (Math.random() - 0.5) * 8,
+          trappedInNode: false,
+          targetNodeX: 0
+        });
+      }
+    }
+
+    function triggerPurge() {
+      simState.purgeActive = true;
+      simState.purgeTimer = 75; // 75 animation ticks of active sweep
+      
+      const badge = document.getElementById('purgeStatusBadge');
+      badge.className = "px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 mono animate-pulse";
+      badge.innerText = "ACTIVE PZT PURGE SWEEP";
+
+      document.getElementById('globalAuditorStatus').innerText = "ACOUSTIC SWEEP: ACTIVE";
+      document.getElementById('globalAuditorDot').className = "w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping";
+    }
+
+    function toggleAutoPilot() {
+      simState.autoPilot = !simState.autoPilot;
+      const btn = document.getElementById('autoPilotBtn');
+      if (simState.autoPilot) {
+        btn.className = "flex-1 py-2 px-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold mono flex items-center justify-center space-x-1.5 transition";
+        btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span><span>Autonomous Auditor: ON</span>`;
+      } else {
+        btn.className = "flex-1 py-2 px-3 bg-gray-800 text-gray-400 border border-gray-700 rounded-xl text-xs font-semibold mono flex items-center justify-center space-x-1.5 transition";
+        btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-gray-500"></span><span>Autonomous Auditor: OFF</span>`;
+      }
+    }
+
+    function resetSimulation() {
+      simState.pressure = 2.40;
+      simState.velocity = 0.35;
+      simState.heatLeak = 12.0;
+      simState.voidFraction = 0.008;
+      simState.purgeActive = false;
+      simState.purgeTimer = 0;
+      
+      document.getElementById('inputPressure').value = 2.40;
+      document.getElementById('sliderPVal').innerText = "2.40 bar";
+      document.getElementById('inputVelocity').value = 0.35;
+      document.getElementById('sliderVVal').innerText = "0.35 m/s";
+      document.getElementById('inputHeatLeak').value = 12;
+      document.getElementById('sliderQVal').innerText = "12.5 W/m²";
+      
+      initBubbles();
+    }
+
+    // --- Main Application Lifecycle Loop ---
+    window.onload = function() {
+      // 1. Render Lucide icons
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+
+      // 2. Setup Canvas
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      initBubbles();
+
+      // 3. Initialize Visual Telemetry Charts
+      initCharts();
+
+      // 4. Primary Animation & Physics Intervals
+      let chartThrottle = 0;
+      function loop() {
+        updatePhysics();
+        drawSimulation();
+
+        chartThrottle++;
+        if (chartThrottle % 4 === 0) {
+          updateChartsAndDOM();
+        }
+        requestAnimationFrame(loop);
+      }
+
+      // Start animation loop
+      requestAnimationFrame(loop);
+    };
+  </script>
+</body>
+</html>
